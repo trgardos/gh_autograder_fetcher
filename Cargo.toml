@@ -1,0 +1,46 @@
+[package]
+name = "gh_autograder_fetcher"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Terminal UI
+ratatui = "0.28"
+crossterm = "0.28"
+
+# CSV export
+csv = "1.3"
+
+# Date/Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Configuration
+dotenv = "0.15"
+
+# Collections
+indexmap = { version = "2.0", features = ["serde"] }
+
+# Base64 decoding (for GitHub file contents)
+base64 = "0.22"
+
+# CLI parsing (optional, for future CLI mode)
+clap = { version = "4.5", features = ["derive"], optional = true }
+
+[features]
+default = []
+cli = ["clap"]
