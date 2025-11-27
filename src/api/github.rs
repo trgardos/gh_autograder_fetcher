@@ -13,7 +13,11 @@ pub struct GitHubClient {
 
 impl GitHubClient {
     pub fn new(token: String) -> Self {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120)) // 2 minute timeout
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("Failed to build HTTP client");
         Self { client, token }
     }
 

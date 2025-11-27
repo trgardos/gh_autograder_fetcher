@@ -13,7 +13,11 @@ pub struct ClassroomClient {
 
 impl ClassroomClient {
     pub fn new(token: String) -> Self {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120)) // 2 minute timeout
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("Failed to build HTTP client");
         Self { client, token }
     }
 
@@ -49,13 +53,18 @@ impl ClassroomClient {
             .context(format!("Failed to send request to {}", url))?;
 
         let status = response.status();
-        if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("API request failed with status {}: {}", status, error_text);
-        }
 
-        // Get the response text first for debugging
+        // Get the response text for both error and success cases
         let response_text = response.text().await.context("Failed to get response text")?;
+
+        if !status.is_success() {
+            anyhow::bail!(
+                "API request failed with status {} for URL {}\nResponse body: {}",
+                status,
+                url,
+                response_text
+            );
+        }
 
         // Try to parse JSON and provide helpful error message
         serde_json::from_str(&response_text).with_context(|| {
@@ -135,13 +144,34 @@ impl ClassroomClient {
     ) -> Result<Vec<AcceptedAssignment>> {
         let mut all_accepted = Vec::new();
         let mut page = 1;
+        let per_page = 30; // Smaller page size to avoid timeouts
 
         loop {
             let path = format!(
-                "/assignments/{}/accepted_assignments?page={}&per_page=100",
-                assignment_id, page
+                "/assignments/{}/accepted_assignments?page={}&per_page={}",
+                assignment_id, page, per_page
             );
-            let accepted: Vec<AcceptedAssignment> = self.get(&path).await?;
+
+            // Retry logic for network errors
+            let mut retries = 3;
+            let accepted: Vec<AcceptedAssignment> = loop {
+                match self.get(&path).await {
+                    Ok(result) => break result,
+                    Err(e) => {
+                        retries -= 1;
+                        if retries == 0 {
+                            return Err(e).with_context(|| {
+                                format!(
+                                    "Failed to fetch accepted assignments for assignment_id={} after 3 retries",
+                                    assignment_id
+                                )
+                            });
+                        }
+                        // Wait a bit before retrying
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                }
+            };
 
             if accepted.is_empty() {
                 break;
@@ -150,7 +180,7 @@ impl ClassroomClient {
             all_accepted.extend(accepted);
             page += 1;
 
-            // Break after 100 pages (10,000 students should be enough!)
+            // Break after 100 pages (3,000 students should be enough!)
             if page > 100 {
                 break;
             }

@@ -40,10 +40,13 @@ pub struct SimpleClassroom {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AcceptedAssignment {
     pub id: u64,
+    #[serde(default)]
     pub submitted: bool,
+    #[serde(default)]
     pub passing: bool,
+    #[serde(default)]
     pub commit_count: u32,
-    pub grade: String,
+    pub grade: Option<String>,
     pub students: Vec<Student>,
     pub repository: Repository,
     pub assignment: AssignmentInfo,
@@ -53,7 +56,9 @@ pub struct AcceptedAssignment {
 pub struct Student {
     pub id: u64,
     pub login: String,
+    pub name: Option<String>,
     pub avatar_url: String,
+    pub html_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
