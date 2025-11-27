@@ -57,6 +57,7 @@ pub struct FetchProgress {
     pub completed: usize,
     pub current_student: String,
     pub errors: usize,
+    pub status_messages: Vec<String>,
 }
 
 impl FetchProgress {
@@ -66,12 +67,21 @@ impl FetchProgress {
             completed: 0,
             current_student: String::new(),
             errors: 0,
+            status_messages: vec!["Initializing...".to_string()],
         }
     }
 
     pub fn update(&mut self, completed: usize, current_student: &str) {
         self.completed = completed;
         self.current_student = current_student.to_string();
+    }
+
+    pub fn add_status(&mut self, message: String) {
+        self.status_messages.push(message);
+        // Keep only the last 20 messages to avoid memory issues
+        if self.status_messages.len() > 20 {
+            self.status_messages.remove(0);
+        }
     }
 
     pub fn percentage(&self) -> f64 {

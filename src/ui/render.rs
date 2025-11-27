@@ -327,8 +327,8 @@ fn render_fetching_results(
         .constraints([
             Constraint::Length(3),
             Constraint::Length(3),
+            Constraint::Min(8),
             Constraint::Length(3),
-            Constraint::Min(1),
         ])
         .split(area);
 
@@ -345,22 +345,49 @@ fn render_fetching_results(
 
     // Progress bar
     let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::ALL))
+        .block(Block::default().title("Progress").borders(Borders::ALL))
         .gauge_style(Style::default().fg(Color::Green))
         .percent(progress.percentage() as u16)
         .label(format!(
-            "{}/{}",
-            progress.completed, progress.total_students
+            "{}/{} students | {} errors",
+            progress.completed, progress.total_students, progress.errors
         ));
 
     frame.render_widget(gauge, chunks[1]);
 
-    // Current student
-    let current = Paragraph::new(format!("Current: {}", progress.current_student))
-        .block(Block::default().borders(Borders::ALL))
-        .alignment(Alignment::Center);
+    // Status messages (scrolling log)
+    let status_items: Vec<ListItem> = progress
+        .status_messages
+        .iter()
+        .map(|msg| {
+            ListItem::new(format!("• {}", msg))
+                .style(Style::default().fg(Color::Green))
+        })
+        .collect();
 
-    frame.render_widget(current, chunks[2]);
+    let status_list = List::new(status_items)
+        .block(
+            Block::default()
+                .title("Status Log")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        );
+
+    frame.render_widget(status_list, chunks[2]);
+
+    // Summary info
+    let info_text = if progress.current_student.is_empty() {
+        "Preparing...".to_string()
+    } else {
+        format!("Current student: {}", progress.current_student)
+    };
+
+    let info = Paragraph::new(info_text)
+        .block(Block::default().borders(Borders::ALL))
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Cyan));
+
+    frame.render_widget(info, chunks[3]);
 }
 
 fn render_results_complete(
