@@ -177,18 +177,36 @@ pub async fn fetch_all_results(
         .await
         .context("Failed to fetch assignment details")?;
 
-    // Fetch test definitions from starter repo
-    let test_definitions = if let Some(starter_url) = &assignment.starter_code_url {
-        fetch_test_definitions(github_client, starter_url).await?
-    } else {
-        anyhow::bail!("Assignment has no starter code repository");
-    };
-
     // Get all accepted assignments (students)
     let accepted_assignments = classroom_client
         .list_accepted_assignments(assignment_id)
         .await
         .context("Failed to fetch accepted assignments")?;
+
+    if accepted_assignments.is_empty() {
+        anyhow::bail!("No students have accepted this assignment yet");
+    }
+
+    // Fetch test definitions from starter repo, or from first student's repo if no starter
+    let test_definitions = if let Some(starter_url) = &assignment.starter_code_url {
+        fetch_test_definitions(github_client, starter_url).await?
+    } else {
+        // No starter repo, fetch from first student's repository
+        let first_student = &accepted_assignments[0];
+        let (owner, repo) = parse_repo_url(&first_student.repository.full_name);
+
+        if owner.is_empty() || repo.is_empty() {
+            anyhow::bail!("Invalid repository name: {}", first_student.repository.full_name);
+        }
+
+        let workflow_content = github_client
+            .get_file_contents(owner, repo, ".github/workflows/classroom.yml")
+            .await
+            .context("Failed to fetch workflow file from first student's repository")?;
+
+        parser::parse_workflow(&workflow_content)
+            .context("Failed to parse workflow file")?
+    };
 
     let total_students = accepted_assignments.len();
     let mut results = Vec::new();
