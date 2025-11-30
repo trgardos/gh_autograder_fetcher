@@ -1,4 +1,4 @@
-use crate::models::{FileContent, JobsResponse, WorkflowRunsResponse};
+use crate::models::{CheckRunsResponse, FileContent, JobsResponse, WorkflowRunsResponse};
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::de::DeserializeOwned;
@@ -116,5 +116,44 @@ impl GitHubClient {
     ) -> Result<JobsResponse> {
         let path = format!("/repos/{}/{}/actions/runs/{}/jobs", owner, repo, run_id);
         self.get(&path).await
+    }
+
+    /// List check runs for a git reference (commit SHA, branch, or tag)
+    pub async fn list_check_runs_for_ref(
+        &self,
+        owner: &str,
+        repo: &str,
+        git_ref: &str,
+    ) -> Result<CheckRunsResponse> {
+        let path = format!("/repos/{}/{}/commits/{}/check-runs?per_page=100", owner, repo, git_ref);
+        self.get(&path).await
+    }
+
+    /// Get logs for a job
+    pub async fn get_job_logs(
+        &self,
+        owner: &str,
+        repo: &str,
+        job_id: u64,
+    ) -> Result<String> {
+        let url = format!("{}/repos/{}/{}/actions/jobs/{}/logs", API_BASE, owner, repo, job_id);
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.build_headers())
+            .send()
+            .await
+            .context(format!("Failed to send request to {}", url))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("API request failed with status {}: {}", status, error_text);
+        }
+
+        response
+            .text()
+            .await
+            .context("Failed to read log text")
     }
 }

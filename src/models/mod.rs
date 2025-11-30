@@ -141,6 +141,41 @@ pub struct FileContent {
 }
 
 // ============================================================================
+// GitHub Checks API Models
+// ============================================================================
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CheckRunsResponse {
+    pub total_count: u32,
+    pub check_runs: Vec<CheckRun>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CheckRun {
+    pub id: u64,
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub output: Option<CheckRunOutput>,
+    pub app: Option<CheckRunApp>,
+    pub annotations_count: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CheckRunOutput {
+    pub title: Option<String>,
+    pub summary: Option<String>,
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CheckRunApp {
+    pub id: u64,
+    pub slug: String,
+    pub name: String,
+}
+
+// ============================================================================
 // Workflow YAML Models
 // ============================================================================
 

@@ -15,6 +15,41 @@ pub fn parse_repo_url(full_name: &str) -> (&str, &str) {
     }
 }
 
+/// Parse points from GitHub Classroom check run summary
+/// Looks for patterns like "Points XX/YY" or "XX/YY"
+fn parse_points_from_summary(summary: &str) -> Option<u32> {
+    // Try to find "Points XX/YY" pattern
+    if let Some(points_idx) = summary.find("Points") {
+        let after_points = &summary[points_idx + 6..];
+        // Extract the numbers
+        if let Some(slash_idx) = after_points.find('/') {
+            let before_slash = &after_points[..slash_idx].trim();
+            // Extract just the number
+            if let Some(num_str) = before_slash.split_whitespace().last() {
+                if let Ok(points) = num_str.parse::<u32>() {
+                    return Some(points);
+                }
+            }
+        }
+    }
+
+    // Try to find "XX/YY" pattern directly
+    for line in summary.lines() {
+        if let Some(slash_idx) = line.find('/') {
+            // Get the characters before the slash
+            let before_slash = &line[..slash_idx];
+            // Try to extract the number
+            if let Some(num_str) = before_slash.split_whitespace().last() {
+                if let Ok(points) = num_str.parse::<u32>() {
+                    return Some(points);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Fetch test definitions from the assignment's starter repository
 pub async fn fetch_test_definitions(
     github_client: &GitHubClient,
@@ -102,13 +137,15 @@ pub async fn fetch_student_results(
         username
     ))?;
 
-    // Get jobs for this workflow run
+    // Note: We don't use check runs as they don't contain actual points information
+    // The points are only available in the job logs
+
+    // Initialize tests with pass/fail from job steps
     let jobs_response = github_client
         .list_jobs_for_run(owner, repo, run.id)
         .await
         .context(format!("Failed to fetch jobs for {}", username))?;
 
-    // Find the autograding job
     let autograding_job = jobs_response
         .jobs
         .into_iter()
@@ -118,7 +155,6 @@ pub async fn fetch_student_results(
             username
         ))?;
 
-    // Match steps to tests and calculate points
     let mut tests = IndexMap::new();
 
     for test_def in test_definitions {
@@ -132,10 +168,9 @@ pub async fn fetch_student_results(
             match step.conclusion.as_deref() {
                 Some("success") => (test_def.max_score, true),
                 Some("failure") => (0, false),
-                _ => (0, false), // skipped, cancelled, etc.
+                _ => (0, false),
             }
         } else {
-            // Step not found (shouldn't happen, but handle gracefully)
             (0, false)
         };
 
@@ -150,7 +185,17 @@ pub async fn fetch_student_results(
         );
     }
 
-    let total_awarded = tests.values().map(|t| t.points_awarded).sum();
+    // Get actual points from job logs
+    // GitHub Classroom autograding reporter outputs the final score in the logs
+    let mut total_awarded: u32 = tests.values().map(|t| t.points_awarded).sum();
+
+    // Try to fetch job logs and parse actual points (handles partial credit)
+    if let Ok(logs) = github_client.get_job_logs(owner, repo, autograding_job.id).await {
+        if let Some(points) = parse_points_from_summary(&logs) {
+            total_awarded = points;
+        }
+    }
+
     let total_available = test_definitions.iter().map(|t| t.max_score).sum();
 
     Ok(StudentResult {
