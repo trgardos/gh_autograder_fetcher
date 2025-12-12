@@ -21,6 +21,7 @@ pub struct App {
     state: AppState,
     spinner_frame: usize,
     background_task: Option<tokio::task::JoinHandle<Result<AppState>>>,
+    progress_rx: Option<tokio::sync::mpsc::UnboundedReceiver<FetchProgress>>,
 }
 
 impl App {
@@ -31,6 +32,7 @@ impl App {
             state: AppState::LoadingClassrooms,
             spinner_frame: 0,
             background_task: None,
+            progress_rx: None,
         }
     }
 
@@ -77,10 +79,27 @@ impl App {
             // Always redraw the UI
             terminal.draw(|f| render_ui(f, &self.state, spinner))?;
 
+            // Check for progress updates
+            if let Some(rx) = &mut self.progress_rx {
+                while let Ok(progress) = rx.try_recv() {
+                    // Update the progress in the current state
+                    match &mut self.state {
+                        AppState::FetchingResults { progress: ref mut p, .. } => {
+                            *p = progress;
+                        }
+                        AppState::FetchingLateResults { progress: ref mut p, .. } => {
+                            *p = progress;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
             // Check if background task has completed
             if let Some(task) = &mut self.background_task {
                 if task.is_finished() {
                     let task = self.background_task.take().unwrap();
+                    self.progress_rx = None; // Clear progress channel
                     match task.await {
                         Ok(Ok(new_state)) => {
                             self.state = new_state;
@@ -748,6 +767,10 @@ impl App {
         assignment: Assignment,
         deadline: Option<chrono::DateTime<Utc>>,
     ) {
+        // Create progress channel
+        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.progress_rx = Some(progress_rx);
+
         // Set initial fetching state
         let progress = FetchProgress::new(0);
         self.state = AppState::FetchingResults {
@@ -763,7 +786,7 @@ impl App {
 
         // Spawn background task
         let task = tokio::spawn(async move {
-            Self::do_fetch_results(classroom_client, github_client, classroom, assignment, deadline).await
+            Self::do_fetch_results(classroom_client, github_client, classroom, assignment, deadline, progress_tx).await
         });
 
         self.background_task = Some(task);
@@ -777,6 +800,10 @@ impl App {
         late_deadline: chrono::DateTime<Utc>,
         late_penalty: f64,
     ) {
+        // Create progress channel
+        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.progress_rx = Some(progress_rx);
+
         // Set initial fetching state
         let progress = FetchProgress::new(0);
         self.state = AppState::FetchingLateResults {
@@ -802,6 +829,7 @@ impl App {
                 on_time_deadline,
                 late_deadline,
                 late_penalty,
+                progress_tx,
             ).await
         });
 
@@ -814,12 +842,23 @@ impl App {
         classroom: Classroom,
         assignment: Assignment,
         deadline: Option<chrono::DateTime<Utc>>,
+        progress_tx: tokio::sync::mpsc::UnboundedSender<FetchProgress>,
     ) -> Result<AppState> {
+        let mut progress = FetchProgress::new(0);
+
+        // Send initial progress
+        progress.add_status("Fetching assignment details...".to_string());
+        let _ = progress_tx.send(progress.clone());
+
         // Fetch assignment details
         let assignment_details = classroom_client
             .get_assignment(assignment.id)
             .await
             .context("Failed to fetch assignment details")?;
+
+        progress.add_status("✓ Assignment details loaded".to_string());
+        progress.add_status("Fetching list of students...".to_string());
+        let _ = progress_tx.send(progress.clone());
 
         // Get all accepted assignments
         let accepted_assignments = classroom_client
@@ -830,6 +869,11 @@ impl App {
         if accepted_assignments.is_empty() {
             anyhow::bail!("No students have accepted this assignment yet");
         }
+
+        progress.total_students = accepted_assignments.len();
+        progress.add_status(format!("✓ Found {} students", accepted_assignments.len()));
+        progress.add_status("Loading test definitions...".to_string());
+        let _ = progress_tx.send(progress.clone());
 
         // Fetch test definitions
         let test_definitions = if let Some(starter_url) = &assignment_details.starter_code_url {
@@ -844,21 +888,43 @@ impl App {
             parser::parse_workflow(&workflow_content)?
         };
 
+        progress.add_status(format!("✓ Loaded {} tests", test_definitions.len()));
+        progress.add_status("Fetching student results...".to_string());
+        let _ = progress_tx.send(progress.clone());
+
         // Fetch results for each student
         let mut results = Vec::new();
-        for student in accepted_assignments.iter() {
+        for (index, student) in accepted_assignments.iter().enumerate() {
+            let student_name = student
+                .students
+                .first()
+                .map(|s| s.login.as_str())
+                .unwrap_or("unknown");
+
+            progress.completed = index;
+            progress.current_student = student_name.to_string();
+            progress.add_status(format!("[{}/{}] {}", index + 1, accepted_assignments.len(), student_name));
+            let _ = progress_tx.send(progress.clone());
+
             match fetcher::fetch_student_results(&github_client, student, deadline, &test_definitions).await {
-                Ok(result) => results.push(result),
+                Ok(result) => {
+                    results.push(result);
+                    progress.add_status(format!("  ✓ {} - {}/{} points",
+                        student_name,
+                        results.last().unwrap().total_awarded,
+                        results.last().unwrap().total_available));
+                }
                 Err(e) => {
-                    let student_name = student
-                        .students
-                        .first()
-                        .map(|s| s.login.as_str())
-                        .unwrap_or("unknown");
                     eprintln!("Error fetching results for {}: {}", student_name, e);
+                    progress.errors += 1;
+                    progress.add_status(format!("  ✗ {} - Error", student_name));
                 }
             }
         }
+
+        progress.completed = accepted_assignments.len();
+        progress.add_status(format!("✓ Completed {} students", results.len()));
+        let _ = progress_tx.send(progress.clone());
 
         // Export to CSV
         let csv_filename = export::export_to_csv(&results, &assignment.slug)?;
@@ -882,7 +948,25 @@ impl App {
         on_time_deadline: chrono::DateTime<Utc>,
         late_deadline: chrono::DateTime<Utc>,
         late_penalty: f64,
+        progress_tx: tokio::sync::mpsc::UnboundedSender<FetchProgress>,
     ) -> Result<AppState> {
+        let mut progress = FetchProgress::new(0);
+
+        // Send initial progress
+        progress.add_status("Starting late grading fetch...".to_string());
+        let _ = progress_tx.send(progress.clone());
+
+        // Create progress callback that sends through the channel
+        let progress_tx_clone = progress_tx.clone();
+        let progress_callback = Box::new(move |completed: usize, total: usize, student: &str| {
+            let mut p = FetchProgress::new(total);
+            p.completed = completed.saturating_sub(1);
+            p.total_students = total;
+            p.current_student = student.to_string();
+            p.add_status(format!("[{}/{}] {}", completed, total, student));
+            let _ = progress_tx_clone.send(p);
+        });
+
         // Fetch late grading results
         let results = fetcher::fetch_all_late_results(
             &classroom_client,
@@ -891,8 +975,12 @@ impl App {
             on_time_deadline,
             late_deadline,
             late_penalty,
-            None, // No progress callback since we're running in background
+            Some(progress_callback),
         ).await?;
+
+        progress.completed = progress.total_students;
+        progress.add_status(format!("✓ Completed {} students", results.len()));
+        let _ = progress_tx.send(progress.clone());
 
         // Export to CSV
         let csv_filename = export::export_late_grading_to_csv(&results, &assignment.slug)?;
