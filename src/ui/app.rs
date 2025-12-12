@@ -84,10 +84,10 @@ impl App {
                 while let Ok(progress) = rx.try_recv() {
                     // Update the progress in the current state
                     match &mut self.state {
-                        AppState::FetchingResults { progress: ref mut p, .. } => {
+                        AppState::FetchingResults { progress: p, .. } => {
                             *p = progress;
                         }
-                        AppState::FetchingLateResults { progress: ref mut p, .. } => {
+                        AppState::FetchingLateResults { progress: p, .. } => {
                             *p = progress;
                         }
                         _ => {}
