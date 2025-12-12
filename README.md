@@ -1,5 +1,7 @@
 # GitHub Classroom Autograder Fetcher
 
+*Vibe Coded with Claude Code*
+
 A command-line tool with an interactive TUI for fetching and exporting GitHub Classroom autograder results to CSV format.
 
 <div style="text-align: center;">
@@ -25,6 +27,14 @@ A command-line tool with an interactive TUI for fetching and exporting GitHub Cl
   - `repo` (for accessing student repositories and Actions data)
 
 ## Installation
+
+Install via Cargo:
+
+```bash
+cargo install gh_autograder_fetcher
+```
+
+Or clone this repository and build manually:
 
 1. Clone this repository:
 ```bash
