@@ -101,11 +101,6 @@ impl ClassroomClient {
         Ok(all_classrooms)
     }
 
-    pub async fn get_classroom(&self, classroom_id: u64) -> Result<Classroom> {
-        let path = format!("/classrooms/{}", classroom_id);
-        self.get(&path).await
-    }
-
     pub async fn list_assignments(&self, classroom_id: u64) -> Result<Vec<Assignment>> {
         let mut all_assignments = Vec::new();
         let mut page = 1;

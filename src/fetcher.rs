@@ -177,10 +177,10 @@ pub async fn fetch_student_results(
         tests.insert(
             test_def.name.clone(),
             TestResult {
-                name: test_def.name.clone(),
+                _name: test_def.name.clone(),
                 points_awarded,
-                points_available: test_def.max_score,
-                passed,
+                _points_available: test_def.max_score,
+                _passed: passed,
             },
         );
     }
@@ -208,79 +208,6 @@ pub async fn fetch_student_results(
         total_awarded,
         total_available,
     })
-}
-
-/// Fetch results for all students in an assignment
-pub async fn fetch_all_results(
-    classroom_client: &ClassroomClient,
-    github_client: &GitHubClient,
-    assignment_id: u64,
-    deadline: Option<DateTime<Utc>>,
-    progress_callback: Option<Box<dyn Fn(usize, usize, &str) + Send>>,
-) -> Result<Vec<StudentResult>> {
-    // Get assignment details
-    let assignment = classroom_client
-        .get_assignment(assignment_id)
-        .await
-        .context("Failed to fetch assignment details")?;
-
-    // Get all accepted assignments (students)
-    let accepted_assignments = classroom_client
-        .list_accepted_assignments(assignment_id)
-        .await
-        .context("Failed to fetch accepted assignments")?;
-
-    if accepted_assignments.is_empty() {
-        anyhow::bail!("No students have accepted this assignment yet");
-    }
-
-    // Fetch test definitions from starter repo, or from first student's repo if no starter
-    let test_definitions = if let Some(starter_url) = &assignment.starter_code_url {
-        fetch_test_definitions(github_client, starter_url).await?
-    } else {
-        // No starter repo, fetch from first student's repository
-        let first_student = &accepted_assignments[0];
-        let (owner, repo) = parse_repo_url(&first_student.repository.full_name);
-
-        if owner.is_empty() || repo.is_empty() {
-            anyhow::bail!("Invalid repository name: {}", first_student.repository.full_name);
-        }
-
-        let workflow_content = github_client
-            .get_file_contents(owner, repo, ".github/workflows/classroom.yml")
-            .await
-            .context("Failed to fetch workflow file from first student's repository")?;
-
-        parser::parse_workflow(&workflow_content)
-            .context("Failed to parse workflow file")?
-    };
-
-    let total_students = accepted_assignments.len();
-    let mut results = Vec::new();
-
-    // Fetch results for each student
-    for (index, student) in accepted_assignments.iter().enumerate() {
-        let student_name = student
-            .students
-            .first()
-            .map(|s| s.login.as_str())
-            .unwrap_or("unknown");
-
-        // Call progress callback if provided
-        if let Some(ref callback) = progress_callback {
-            callback(index + 1, total_students, student_name);
-        }
-
-        match fetch_student_results(github_client, student, deadline, &test_definitions).await {
-            Ok(result) => results.push(result),
-            Err(e) => {
-                eprintln!("Error fetching results for {}: {}", student_name, e);
-                // Continue with other students
-            }
-        }
-    }
-
-    Ok(results)
 }
 
 /// Fetch results for late grading (both on-time and late deadlines)

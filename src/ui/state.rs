@@ -44,17 +44,17 @@ pub enum AppState {
         focused_field: LateGradingField,
     },
     FetchingResults {
-        classroom: Classroom,
+        _classroom: Classroom,
         assignment: Assignment,
-        deadline: Option<DateTime<Utc>>,
+        _deadline: Option<DateTime<Utc>>,
         progress: FetchProgress,
     },
     FetchingLateResults {
-        classroom: Classroom,
+        _classroom: Classroom,
         assignment: Assignment,
-        on_time_deadline: DateTime<Utc>,
-        late_deadline: DateTime<Utc>,
-        late_penalty: f64,
+        _on_time_deadline: DateTime<Utc>,
+        _late_deadline: DateTime<Utc>,
+        _late_penalty: f64,
         progress: FetchProgress,
     },
     ResultsComplete {
@@ -101,11 +101,6 @@ impl FetchProgress {
             errors: 0,
             status_messages: vec!["Initializing...".to_string()],
         }
-    }
-
-    pub fn update(&mut self, completed: usize, current_student: &str) {
-        self.completed = completed;
-        self.current_student = current_student.to_string();
     }
 
     pub fn add_status(&mut self, message: String) {

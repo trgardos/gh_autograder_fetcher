@@ -719,9 +719,9 @@ impl App {
         let mut progress = FetchProgress::new(0);
         progress.add_status("Fetching assignment details...".to_string());
         self.state = AppState::FetchingResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            deadline,
+            _deadline: deadline,
             progress: progress.clone(),
         };
 
@@ -738,9 +738,9 @@ impl App {
         progress.add_status("✓ Assignment details loaded".to_string());
         progress.add_status("Fetching list of students...".to_string());
         self.state = AppState::FetchingResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            deadline,
+            _deadline: deadline,
             progress: progress.clone(),
         };
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -760,9 +760,9 @@ impl App {
         progress.add_status(format!("✓ Found {} students", accepted_assignments.len()));
         progress.add_status("Loading test definitions from workflow...".to_string());
         self.state = AppState::FetchingResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            deadline,
+            _deadline: deadline,
             progress: progress.clone(),
         };
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -787,9 +787,9 @@ impl App {
         ));
         progress.add_status("Starting to fetch student results...".to_string());
         self.state = AppState::FetchingResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            deadline,
+            _deadline: deadline,
             progress: progress.clone(),
         };
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -812,9 +812,9 @@ impl App {
                 student_name
             ));
             self.state = AppState::FetchingResults {
-                classroom: classroom.clone(),
+                _classroom: classroom.clone(),
                 assignment: assignment.clone(),
-                deadline,
+                _deadline: deadline,
                 progress: progress.clone(),
             };
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -851,9 +851,9 @@ impl App {
         ));
         progress.add_status("Exporting results to CSV...".to_string());
         self.state = AppState::FetchingResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            deadline,
+            _deadline: deadline,
             progress: progress.clone(),
         };
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -888,11 +888,11 @@ impl App {
         let mut progress = FetchProgress::new(0);
         progress.add_status("Starting late grading fetch...".to_string());
         self.state = AppState::FetchingLateResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            on_time_deadline,
-            late_deadline,
-            late_penalty,
+            _on_time_deadline: on_time_deadline,
+            _late_deadline: late_deadline,
+            _late_penalty: late_penalty,
             progress: progress.clone(),
         };
 
@@ -901,11 +901,11 @@ impl App {
 
         progress.add_status("Fetching assignment details...".to_string());
         self.state = AppState::FetchingLateResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            on_time_deadline,
-            late_deadline,
-            late_penalty,
+            _on_time_deadline: on_time_deadline,
+            _late_deadline: late_deadline,
+            _late_penalty: late_penalty,
             progress: progress.clone(),
         };
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -920,11 +920,11 @@ impl App {
         progress.add_status("✓ Assignment details loaded".to_string());
         progress.add_status("Fetching list of students...".to_string());
         self.state = AppState::FetchingLateResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            on_time_deadline,
-            late_deadline,
-            late_penalty,
+            _on_time_deadline: on_time_deadline,
+            _late_deadline: late_deadline,
+            _late_penalty: late_penalty,
             progress: progress.clone(),
         };
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -944,11 +944,11 @@ impl App {
         progress.add_status(format!("✓ Found {} students", accepted_assignments.len()));
         progress.add_status("Starting to fetch results for both deadlines...".to_string());
         self.state = AppState::FetchingLateResults {
-            classroom: classroom.clone(),
+            _classroom: classroom.clone(),
             assignment: assignment.clone(),
-            on_time_deadline,
-            late_deadline,
-            late_penalty,
+            _on_time_deadline: on_time_deadline,
+            _late_deadline: late_deadline,
+            _late_penalty: late_penalty,
             progress: progress.clone(),
         };
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -991,11 +991,11 @@ impl App {
                         student
                     ));
                     self.state = AppState::FetchingLateResults {
-                        classroom: classroom.clone(),
+                        _classroom: classroom.clone(),
                         assignment: assignment.clone(),
-                        on_time_deadline,
-                        late_deadline,
-                        late_penalty,
+                        _on_time_deadline: on_time_deadline,
+                        _late_deadline: late_deadline,
+                        _late_penalty: late_penalty,
                         progress: progress.clone(),
                     };
                     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -1010,11 +1010,11 @@ impl App {
                     ));
                     progress.add_status("Exporting results to CSV...".to_string());
                     self.state = AppState::FetchingLateResults {
-                        classroom: classroom.clone(),
+                        _classroom: classroom.clone(),
                         assignment: assignment.clone(),
-                        on_time_deadline,
-                        late_deadline,
-                        late_penalty,
+                        _on_time_deadline: on_time_deadline,
+                        _late_deadline: late_deadline,
+                        _late_penalty: late_penalty,
                         progress: progress.clone(),
                     };
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

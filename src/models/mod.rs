@@ -143,39 +143,6 @@ pub struct FileContent {
 // ============================================================================
 // GitHub Checks API Models
 // ============================================================================
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CheckRunsResponse {
-    pub total_count: u32,
-    pub check_runs: Vec<CheckRun>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CheckRun {
-    pub id: u64,
-    pub name: String,
-    pub status: String,
-    pub conclusion: Option<String>,
-    pub output: Option<CheckRunOutput>,
-    pub app: Option<CheckRunApp>,
-    pub annotations_count: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CheckRunOutput {
-    pub title: Option<String>,
-    pub summary: Option<String>,
-    pub text: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CheckRunApp {
-    pub id: u64,
-    pub slug: String,
-    pub name: String,
-}
-
-// ============================================================================
 // Workflow YAML Models
 // ============================================================================
 
@@ -213,7 +180,7 @@ pub struct StepWith {
 #[derive(Debug, Clone)]
 pub struct TestDefinition {
     pub name: String,
-    pub id: String,
+    pub _id: String,
     pub max_score: u32,
 }
 
@@ -233,7 +200,7 @@ pub struct LateGradingResult {
     pub repo_url: String,
     pub on_time_result: StudentResult,
     pub late_result: StudentResult,
-    pub late_penalty: f64,
+    pub _late_penalty: f64,
     pub final_score: u32,
 }
 
@@ -261,7 +228,7 @@ impl LateGradingResult {
             repo_url: on_time_result.repo_url.clone(),
             on_time_result,
             late_result,
-            late_penalty,
+            _late_penalty: late_penalty,
             final_score,
         }
     }
@@ -269,20 +236,20 @@ impl LateGradingResult {
 
 #[derive(Debug, Clone)]
 pub struct TestResult {
-    pub name: String,
+    pub _name: String,
     pub points_awarded: u32,
-    pub points_available: u32,
-    pub passed: bool,
+    pub _points_available: u32,
+    pub _passed: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResultStats {
-    pub total_students: usize,
+    pub _total_students: usize,
     pub total_tests: usize,
     pub average_score: f64,
     pub median_score: f64,
     pub students_processed: usize,
-    pub errors: usize,
+    pub _errors: usize,
 }
 
 impl ResultStats {
@@ -333,12 +300,12 @@ impl ResultStats {
         };
 
         Self {
-            total_students,
+            _total_students: total_students,
             total_tests,
             average_score,
             median_score,
             students_processed: total_students,
-            errors: 0,
+            _errors: 0,
         }
     }
 }

@@ -34,7 +34,7 @@ fn extract_test_definitions(workflow: &WorkflowFile) -> Result<Vec<TestDefinitio
             if let (Some(_test_name), Some(max_score)) = (&with.test_name, &with.max_score) {
                 tests.push(TestDefinition {
                     name: step.name.clone(),
-                    id: id.clone(),
+                    _id: id.clone(),
                     max_score: *max_score,
                 });
             }

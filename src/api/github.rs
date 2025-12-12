@@ -1,4 +1,4 @@
-use crate::models::{CheckRunsResponse, FileContent, JobsResponse, WorkflowRunsResponse};
+use crate::models::{FileContent, JobsResponse, WorkflowRunsResponse};
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::de::DeserializeOwned;
@@ -115,17 +115,6 @@ impl GitHubClient {
         run_id: u64,
     ) -> Result<JobsResponse> {
         let path = format!("/repos/{}/{}/actions/runs/{}/jobs", owner, repo, run_id);
-        self.get(&path).await
-    }
-
-    /// List check runs for a git reference (commit SHA, branch, or tag)
-    pub async fn list_check_runs_for_ref(
-        &self,
-        owner: &str,
-        repo: &str,
-        git_ref: &str,
-    ) -> Result<CheckRunsResponse> {
-        let path = format!("/repos/{}/{}/commits/{}/check-runs?per_page=100", owner, repo, git_ref);
         self.get(&path).await
     }
 

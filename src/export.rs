@@ -191,19 +191,19 @@ mod tests {
         tests.insert(
             "test_1".to_string(),
             TestResult {
-                name: "test_1".to_string(),
+                _name: "test_1".to_string(),
                 points_awarded: 5,
-                points_available: 5,
-                passed: true,
+                _points_available: 5,
+                _passed: true,
             },
         );
         tests.insert(
             "test_2".to_string(),
             TestResult {
-                name: "test_2".to_string(),
+                _name: "test_2".to_string(),
                 points_awarded: 0,
-                points_available: 10,
-                passed: false,
+                _points_available: 10,
+                _passed: false,
             },
         );
 
