@@ -228,6 +228,46 @@ pub struct StudentResult {
 }
 
 #[derive(Debug, Clone)]
+pub struct LateGradingResult {
+    pub username: String,
+    pub repo_url: String,
+    pub on_time_result: StudentResult,
+    pub late_result: StudentResult,
+    pub late_penalty: f64,
+    pub final_score: u32,
+}
+
+impl LateGradingResult {
+    pub fn new(
+        on_time_result: StudentResult,
+        late_result: StudentResult,
+        late_penalty: f64,
+    ) -> Self {
+        let on_time_score = on_time_result.total_awarded;
+        let late_score = late_result.total_awarded;
+
+        // Calculate final score: on_time_points + (late_points - on_time_points) * (1 - penalty)
+        // Only give credit for improvement
+        let final_score = if late_score > on_time_score {
+            let improvement = late_score - on_time_score;
+            let adjusted_improvement = (improvement as f64 * (1.0 - late_penalty)).round() as u32;
+            on_time_score + adjusted_improvement
+        } else {
+            on_time_score
+        };
+
+        Self {
+            username: on_time_result.username.clone(),
+            repo_url: on_time_result.repo_url.clone(),
+            on_time_result,
+            late_result,
+            late_penalty,
+            final_score,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct TestResult {
     pub name: String,
     pub points_awarded: u32,

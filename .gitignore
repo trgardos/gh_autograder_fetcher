@@ -7,6 +7,7 @@ Cargo.lock
 
 # CSV exports
 results_*.csv
+results_*.xlsx
 
 # IDE
 .vscode/

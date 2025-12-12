@@ -21,6 +21,11 @@ pub enum AppState {
         assignment: Assignment,
         selected_index: usize,
     },
+    GradingModeSelection {
+        classroom: Classroom,
+        assignment: Assignment,
+        selected_index: usize,
+    },
     DeadlineInput {
         classroom: Classroom,
         assignment: Assignment,
@@ -28,10 +33,28 @@ pub enum AppState {
         time_input: String,
         focused_field: DeadlineField,
     },
+    LateGradingInput {
+        classroom: Classroom,
+        assignment: Assignment,
+        on_time_date: String,
+        on_time_time: String,
+        late_date: String,
+        late_time: String,
+        penalty_input: String,
+        focused_field: LateGradingField,
+    },
     FetchingResults {
         classroom: Classroom,
         assignment: Assignment,
         deadline: Option<DateTime<Utc>>,
+        progress: FetchProgress,
+    },
+    FetchingLateResults {
+        classroom: Classroom,
+        assignment: Assignment,
+        on_time_deadline: DateTime<Utc>,
+        late_deadline: DateTime<Utc>,
+        late_penalty: f64,
         progress: FetchProgress,
     },
     ResultsComplete {
@@ -49,6 +72,15 @@ pub enum AppState {
 pub enum DeadlineField {
     Date,
     Time,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LateGradingField {
+    OnTimeDate,
+    OnTimeTime,
+    LateDate,
+    LateTime,
+    Penalty,
 }
 
 #[derive(Debug, Clone)]

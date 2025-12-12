@@ -1,4 +1,4 @@
-use crate::ui::state::{AppState, DeadlineField};
+use crate::ui::state::{AppState, DeadlineField, LateGradingField};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -27,6 +27,11 @@ pub fn render_ui(frame: &mut Frame, state: &AppState) {
             assignment,
             selected_index,
         } => render_assignment_options(frame, classroom, assignment, *selected_index),
+        AppState::GradingModeSelection {
+            classroom,
+            assignment,
+            selected_index,
+        } => render_grading_mode_selection(frame, classroom, assignment, *selected_index),
         AppState::DeadlineInput {
             classroom,
             assignment,
@@ -34,7 +39,32 @@ pub fn render_ui(frame: &mut Frame, state: &AppState) {
             time_input,
             focused_field,
         } => render_deadline_input(frame, classroom, assignment, date_input, time_input, *focused_field),
+        AppState::LateGradingInput {
+            classroom,
+            assignment,
+            on_time_date,
+            on_time_time,
+            late_date,
+            late_time,
+            penalty_input,
+            focused_field,
+        } => render_late_grading_input(
+            frame,
+            classroom,
+            assignment,
+            on_time_date,
+            on_time_time,
+            late_date,
+            late_time,
+            penalty_input,
+            *focused_field,
+        ),
         AppState::FetchingResults {
+            assignment,
+            progress,
+            ..
+        } => render_fetching_results(frame, assignment, progress),
+        AppState::FetchingLateResults {
             assignment,
             progress,
             ..
@@ -211,7 +241,7 @@ fn render_assignment_options(
     frame.render_widget(info, chunks[0]);
 
     // Options
-    let options = vec!["Download Latest Results", "Download Results After Deadline"];
+    let options = vec!["Download Latest Results", "Download Results After Deadline", "Late Grading Mode"];
     let items: Vec<ListItem> = options
         .iter()
         .enumerate()
@@ -241,6 +271,212 @@ fn render_assignment_options(
         .alignment(Alignment::Center);
 
     frame.render_widget(help, chunks[2]);
+}
+
+fn render_grading_mode_selection(
+    frame: &mut Frame,
+    classroom: &crate::models::Classroom,
+    assignment: &crate::models::Assignment,
+    selected_index: usize,
+) {
+    let area = frame.area();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5),
+            Constraint::Min(3),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    // Assignment info
+    let info = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled("Assignment: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(&assignment.title),
+        ]),
+        Line::from(vec![
+            Span::styled("Classroom: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(&classroom.name),
+        ]),
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+
+    frame.render_widget(info, chunks[0]);
+
+    // Grading mode options
+    let options = vec!["Regular Grading (Single Deadline)", "Late Grading (On-Time + Late Deadline)"];
+    let items: Vec<ListItem> = options
+        .iter()
+        .enumerate()
+        .map(|(i, option)| {
+            let style = if i == selected_index {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            let prefix = if i == selected_index { "> " } else { "  " };
+            ListItem::new(format!("{}{}", prefix, option)).style(style)
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .title("Select Grading Mode")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+
+    frame.render_widget(list, chunks[1]);
+
+    let help = Paragraph::new("[↑↓: Navigate | Enter: Select | Esc: Back | q: Quit]")
+        .block(Block::default().borders(Borders::ALL))
+        .alignment(Alignment::Center);
+
+    frame.render_widget(help, chunks[2]);
+}
+
+fn render_late_grading_input(
+    frame: &mut Frame,
+    _classroom: &crate::models::Classroom,
+    assignment: &crate::models::Assignment,
+    on_time_date: &str,
+    on_time_time: &str,
+    late_date: &str,
+    late_time: &str,
+    penalty_input: &str,
+    focused_field: LateGradingField,
+) {
+    let area = frame.area();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(12),
+            Constraint::Min(3),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    // Title
+    let title = Paragraph::new(format!("Late Grading Setup: {}", assignment.title))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .alignment(Alignment::Center);
+
+    frame.render_widget(title, chunks[0]);
+
+    // Input form
+    let form_text = vec![
+        Line::from(vec![
+            Span::styled("On-Time Deadline:", Style::default().add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Date (YYYY-MM-DD): ", Style::default()),
+            Span::styled(
+                on_time_date,
+                if matches!(focused_field, LateGradingField::OnTimeDate) {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default()
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Time (HH:MM UTC):  ", Style::default()),
+            Span::styled(
+                on_time_time,
+                if matches!(focused_field, LateGradingField::OnTimeTime) {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default()
+                },
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Late Deadline:", Style::default().add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Date (YYYY-MM-DD): ", Style::default()),
+            Span::styled(
+                late_date,
+                if matches!(focused_field, LateGradingField::LateDate) {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default()
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Time (HH:MM UTC):  ", Style::default()),
+            Span::styled(
+                late_time,
+                if matches!(focused_field, LateGradingField::LateTime) {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default()
+                },
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Late Penalty (%):    ", Style::default()),
+            Span::styled(
+                penalty_input,
+                if matches!(focused_field, LateGradingField::Penalty) {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    Style::default()
+                },
+            ),
+        ]),
+    ];
+
+    let form = Paragraph::new(form_text).block(
+        Block::default()
+            .title("Input Deadlines and Penalty")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+
+    frame.render_widget(form, chunks[1]);
+
+    // Help text
+    let help_text = vec![
+        Line::from("Enter on-time deadline (first graded submission) and late deadline (final graded submission)."),
+        Line::from("Late penalty is deducted from improvements only (e.g., 20% means 80% credit for late work)."),
+        Line::from(""),
+        Line::from("Example: Student gets 70/100 on-time, 90/100 late with 20% penalty:"),
+        Line::from("  Final score = 70 + (90 - 70) * 0.8 = 70 + 16 = 86"),
+    ];
+
+    let help_info = Paragraph::new(help_text)
+        .block(
+            Block::default()
+                .title("How It Works")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green)),
+        )
+        .wrap(Wrap { trim: true });
+
+    frame.render_widget(help_info, chunks[2]);
+
+    let help = Paragraph::new("[Tab: Next Field | Shift+Tab: Previous | Enter: Confirm | Esc: Back | q: Quit]")
+        .block(Block::default().borders(Borders::ALL))
+        .alignment(Alignment::Center);
+
+    frame.render_widget(help, chunks[3]);
 }
 
 fn render_deadline_input(

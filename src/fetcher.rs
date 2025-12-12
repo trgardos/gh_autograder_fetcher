@@ -189,7 +189,9 @@ pub async fn fetch_student_results(
     // GitHub Classroom autograding reporter outputs the final score in the logs
     let mut total_awarded: u32 = tests.values().map(|t| t.points_awarded).sum();
 
-    // Try to fetch job logs and parse actual points (handles partial credit)
+    // Get the authoritative total score from job logs
+    // Note: Individual test scores are based on pass/fail from job steps above
+    // The logs contain the final total which handles any partial credit
     if let Ok(logs) = github_client.get_job_logs(owner, repo, autograding_job.id).await {
         if let Some(points) = parse_points_from_summary(&logs) {
             total_awarded = points;
@@ -276,6 +278,110 @@ pub async fn fetch_all_results(
                 // Continue with other students
             }
         }
+    }
+
+    Ok(results)
+}
+
+/// Fetch results for late grading (both on-time and late deadlines)
+pub async fn fetch_all_late_results(
+    classroom_client: &ClassroomClient,
+    github_client: &GitHubClient,
+    assignment_id: u64,
+    on_time_deadline: DateTime<Utc>,
+    late_deadline: DateTime<Utc>,
+    late_penalty: f64,
+    progress_callback: Option<Box<dyn Fn(usize, usize, &str) + Send>>,
+) -> Result<Vec<crate::models::LateGradingResult>> {
+    // Get assignment details
+    let assignment = classroom_client
+        .get_assignment(assignment_id)
+        .await
+        .context("Failed to fetch assignment details")?;
+
+    // Get all accepted assignments (students)
+    let accepted_assignments = classroom_client
+        .list_accepted_assignments(assignment_id)
+        .await
+        .context("Failed to fetch accepted assignments")?;
+
+    if accepted_assignments.is_empty() {
+        anyhow::bail!("No students have accepted this assignment yet");
+    }
+
+    // Fetch test definitions from starter repo, or from first student's repo if no starter
+    let test_definitions = if let Some(starter_url) = &assignment.starter_code_url {
+        fetch_test_definitions(github_client, starter_url).await?
+    } else {
+        // No starter repo, fetch from first student's repository
+        let first_student = &accepted_assignments[0];
+        let (owner, repo) = parse_repo_url(&first_student.repository.full_name);
+
+        if owner.is_empty() || repo.is_empty() {
+            anyhow::bail!("Invalid repository name: {}", first_student.repository.full_name);
+        }
+
+        let workflow_content = github_client
+            .get_file_contents(owner, repo, ".github/workflows/classroom.yml")
+            .await
+            .context("Failed to fetch workflow file from first student's repository")?;
+
+        parser::parse_workflow(&workflow_content)
+            .context("Failed to parse workflow file")?
+    };
+
+    let total_students = accepted_assignments.len();
+    let mut results = Vec::new();
+
+    // Fetch results for each student
+    for (index, student) in accepted_assignments.iter().enumerate() {
+        let student_name = student
+            .students
+            .first()
+            .map(|s| s.login.as_str())
+            .unwrap_or("unknown");
+
+        // Call progress callback if provided
+        if let Some(ref callback) = progress_callback {
+            callback(index + 1, total_students, student_name);
+        }
+
+        // Fetch on-time results
+        let on_time_result = match fetch_student_results(
+            github_client,
+            student,
+            Some(on_time_deadline),
+            &test_definitions
+        ).await {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("Error fetching on-time results for {}: {}", student_name, e);
+                continue;
+            }
+        };
+
+        // Fetch late results
+        let late_result = match fetch_student_results(
+            github_client,
+            student,
+            Some(late_deadline),
+            &test_definitions
+        ).await {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("Error fetching late results for {}: {}", student_name, e);
+                continue;
+            }
+        };
+
+        // Create late grading result
+        let late_grading_result = crate::models::LateGradingResult::new(
+            on_time_result,
+            late_result,
+            late_penalty,
+        );
+
+        results.push(late_grading_result);
     }
 
     Ok(results)
