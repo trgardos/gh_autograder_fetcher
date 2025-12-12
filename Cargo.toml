@@ -8,6 +8,11 @@ repository = "https://github.com/trgardos/gh_autograder_fetcher"
 description = "A command-line tool with an interactive TUI for fetching and exporting GitHub Classroom autograder results to CSV format."
 keywords = ["github", "classroom", "autograder", "fetcher", "csv"]
 categories = ["development", "command-line"]
+exclude = [
+  "assets/gh_autograder_fetcher.gif",
+  "results_*.csv",
+  "*.xlsx",
+]
 
 [dependencies]
 # Async runtime
