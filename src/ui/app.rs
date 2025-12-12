@@ -19,6 +19,8 @@ pub struct App {
     classroom_client: ClassroomClient,
     github_client: GitHubClient,
     state: AppState,
+    spinner_frame: usize,
+    background_task: Option<tokio::task::JoinHandle<Result<AppState>>>,
 }
 
 impl App {
@@ -27,7 +29,14 @@ impl App {
             classroom_client,
             github_client,
             state: AppState::LoadingClassrooms,
+            spinner_frame: 0,
+            background_task: None,
         }
+    }
+
+    fn spinner_char(&self) -> char {
+        const SPINNER_FRAMES: &[char] = &['|', '/', '-', '\\'];
+        SPINNER_FRAMES[self.spinner_frame % SPINNER_FRAMES.len()]
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -61,8 +70,34 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         loop {
+            // Update spinner for progress indication
+            self.spinner_frame = self.spinner_frame.wrapping_add(1);
+            let spinner = self.spinner_char();
+
             // Always redraw the UI
-            terminal.draw(|f| render_ui(f, &self.state))?;
+            terminal.draw(|f| render_ui(f, &self.state, spinner))?;
+
+            // Check if background task has completed
+            if let Some(task) = &mut self.background_task {
+                if task.is_finished() {
+                    let task = self.background_task.take().unwrap();
+                    match task.await {
+                        Ok(Ok(new_state)) => {
+                            self.state = new_state;
+                        }
+                        Ok(Err(e)) => {
+                            self.state = AppState::Error {
+                                message: format!("Failed to fetch results: {}", e),
+                            };
+                        }
+                        Err(e) => {
+                            self.state = AppState::Error {
+                                message: format!("Background task failed: {}", e),
+                            };
+                        }
+                    }
+                }
+            }
 
             // Check for keyboard events with a short timeout
             if event::poll(std::time::Duration::from_millis(50))? {
@@ -259,8 +294,8 @@ impl App {
                     KeyCode::Enter => {
                         match selected_index {
                             0 => {
-                                // Download latest results
-                                self.fetch_results(classroom, assignment, None).await?;
+                                // Download latest results - spawn as background task
+                                self.spawn_fetch_results(classroom, assignment, None);
                             }
                             1 => {
                                 // Download results after deadline
@@ -367,8 +402,7 @@ impl App {
                         // Parse and validate deadline
                         match parse_deadline(&date_input, &time_input) {
                             Ok(deadline) => {
-                                self.fetch_results(classroom, assignment, Some(deadline))
-                                    .await?;
+                                self.spawn_fetch_results(classroom, assignment, Some(deadline));
                             }
                             Err(e) => {
                                 self.state = AppState::Error {
@@ -646,15 +680,14 @@ impl App {
                             }
                         };
 
-                        // Start fetching late results
-                        self.fetch_late_results(
+                        // Start fetching late results - spawn as background task
+                        self.spawn_fetch_late_results(
                             classroom,
                             assignment,
                             on_time_deadline,
                             late_deadline,
                             late_penalty,
-                        )
-                        .await?;
+                        );
                     }
                     _ => {
                         self.state = AppState::LateGradingInput {
@@ -709,229 +742,87 @@ impl App {
         Ok(false)
     }
 
-    async fn fetch_results(
+    fn spawn_fetch_results(
         &mut self,
         classroom: Classroom,
         assignment: Assignment,
         deadline: Option<chrono::DateTime<Utc>>,
-    ) -> Result<()> {
-        // Step 1: Initialize progress
-        let mut progress = FetchProgress::new(0);
-        progress.add_status("Fetching assignment details...".to_string());
+    ) {
+        // Set initial fetching state
+        let progress = FetchProgress::new(0);
         self.state = AppState::FetchingResults {
             _classroom: classroom.clone(),
             assignment: assignment.clone(),
             _deadline: deadline,
-            progress: progress.clone(),
+            progress,
         };
 
-        // Give UI a chance to render
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Clone clients for the background task
+        let classroom_client = self.classroom_client.clone();
+        let github_client = self.github_client.clone();
 
-        // Step 2: Get assignment details
-        let assignment_details = self
-            .classroom_client
-            .get_assignment(assignment.id)
-            .await
-            .context("Failed to fetch assignment details")?;
+        // Spawn background task
+        let task = tokio::spawn(async move {
+            Self::do_fetch_results(classroom_client, github_client, classroom, assignment, deadline).await
+        });
 
-        progress.add_status("✓ Assignment details loaded".to_string());
-        progress.add_status("Fetching list of students...".to_string());
-        self.state = AppState::FetchingResults {
-            _classroom: classroom.clone(),
-            assignment: assignment.clone(),
-            _deadline: deadline,
-            progress: progress.clone(),
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Step 3: Get all accepted assignments
-        let accepted_assignments = self
-            .classroom_client
-            .list_accepted_assignments(assignment.id)
-            .await
-            .context("Failed to fetch accepted assignments")?;
-
-        if accepted_assignments.is_empty() {
-            anyhow::bail!("No students have accepted this assignment yet");
-        }
-
-        progress.total_students = accepted_assignments.len();
-        progress.add_status(format!("✓ Found {} students", accepted_assignments.len()));
-        progress.add_status("Loading test definitions from workflow...".to_string());
-        self.state = AppState::FetchingResults {
-            _classroom: classroom.clone(),
-            assignment: assignment.clone(),
-            _deadline: deadline,
-            progress: progress.clone(),
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Step 4: Fetch test definitions
-        let test_definitions = if let Some(starter_url) = &assignment_details.starter_code_url {
-            fetcher::fetch_test_definitions(&self.github_client, starter_url).await?
-        } else {
-            let first_student = &accepted_assignments[0];
-            let (owner, repo) = fetcher::parse_repo_url(&first_student.repository.full_name);
-            let workflow_content = self
-                .github_client
-                .get_file_contents(owner, repo, ".github/workflows/classroom.yml")
-                .await
-                .context("Failed to fetch workflow file from first student's repository")?;
-            parser::parse_workflow(&workflow_content)?
-        };
-
-        progress.add_status(format!(
-            "✓ Loaded {} test definitions",
-            test_definitions.len()
-        ));
-        progress.add_status("Starting to fetch student results...".to_string());
-        self.state = AppState::FetchingResults {
-            _classroom: classroom.clone(),
-            assignment: assignment.clone(),
-            _deadline: deadline,
-            progress: progress.clone(),
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Step 5: Fetch results for each student
-        let mut results = Vec::new();
-        for (index, student) in accepted_assignments.iter().enumerate() {
-            let student_name = student
-                .students
-                .first()
-                .map(|s| s.login.as_str())
-                .unwrap_or("unknown");
-
-            progress.completed = index;
-            progress.current_student = student_name.to_string();
-            progress.add_status(format!(
-                "[{}/{}] Fetching: {}",
-                index + 1,
-                accepted_assignments.len(),
-                student_name
-            ));
-            self.state = AppState::FetchingResults {
-                _classroom: classroom.clone(),
-                assignment: assignment.clone(),
-                _deadline: deadline,
-                progress: progress.clone(),
-            };
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-            match fetcher::fetch_student_results(
-                &self.github_client,
-                student,
-                deadline,
-                &test_definitions,
-            )
-            .await
-            {
-                Ok(result) => {
-                    results.push(result);
-                    progress.add_status(format!(
-                        "  ✓ {} - {}/{} points",
-                        student_name,
-                        results.last().unwrap().total_awarded,
-                        results.last().unwrap().total_available
-                    ));
-                }
-                Err(e) => {
-                    eprintln!("Error fetching results for {}: {}", student_name, e);
-                    progress.errors += 1;
-                    progress.add_status(format!("  ✗ {} - Error: {}", student_name, e));
-                }
-            }
-        }
-
-        progress.completed = accepted_assignments.len();
-        progress.add_status(format!(
-            "✓ Completed fetching results for {} students",
-            results.len()
-        ));
-        progress.add_status("Exporting results to CSV...".to_string());
-        self.state = AppState::FetchingResults {
-            _classroom: classroom.clone(),
-            assignment: assignment.clone(),
-            _deadline: deadline,
-            progress: progress.clone(),
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        // Step 6: Export to CSV
-        let csv_filename = export::export_to_csv(&results, &assignment.slug)?;
-
-        progress.add_status(format!("✓ Exported to {}", csv_filename.display()));
-
-        // Step 7: Calculate stats
-        let stats = ResultStats::calculate(&results);
-
-        self.state = AppState::ResultsComplete {
-            classroom,
-            assignment,
-            stats,
-            csv_filename: csv_filename.to_string_lossy().to_string(),
-        };
-
-        Ok(())
+        self.background_task = Some(task);
     }
 
-    async fn fetch_late_results(
+    fn spawn_fetch_late_results(
         &mut self,
         classroom: Classroom,
         assignment: Assignment,
         on_time_deadline: chrono::DateTime<Utc>,
         late_deadline: chrono::DateTime<Utc>,
         late_penalty: f64,
-    ) -> Result<()> {
-        // Step 1: Initialize progress
-        let mut progress = FetchProgress::new(0);
-        progress.add_status("Starting late grading fetch...".to_string());
+    ) {
+        // Set initial fetching state
+        let progress = FetchProgress::new(0);
         self.state = AppState::FetchingLateResults {
             _classroom: classroom.clone(),
             assignment: assignment.clone(),
             _on_time_deadline: on_time_deadline,
             _late_deadline: late_deadline,
             _late_penalty: late_penalty,
-            progress: progress.clone(),
+            progress,
         };
 
-        // Give UI a chance to render
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Clone clients for the background task
+        let classroom_client = self.classroom_client.clone();
+        let github_client = self.github_client.clone();
 
-        progress.add_status("Fetching assignment details...".to_string());
-        self.state = AppState::FetchingLateResults {
-            _classroom: classroom.clone(),
-            assignment: assignment.clone(),
-            _on_time_deadline: on_time_deadline,
-            _late_deadline: late_deadline,
-            _late_penalty: late_penalty,
-            progress: progress.clone(),
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Spawn background task
+        let task = tokio::spawn(async move {
+            Self::do_fetch_late_results(
+                classroom_client,
+                github_client,
+                classroom,
+                assignment,
+                on_time_deadline,
+                late_deadline,
+                late_penalty,
+            ).await
+        });
 
-        // Step 2: Get assignment details (to verify assignment exists)
-        let _assignment_details = self
-            .classroom_client
+        self.background_task = Some(task);
+    }
+
+    async fn do_fetch_results(
+        classroom_client: ClassroomClient,
+        github_client: GitHubClient,
+        classroom: Classroom,
+        assignment: Assignment,
+        deadline: Option<chrono::DateTime<Utc>>,
+    ) -> Result<AppState> {
+        // Fetch assignment details
+        let assignment_details = classroom_client
             .get_assignment(assignment.id)
             .await
             .context("Failed to fetch assignment details")?;
 
-        progress.add_status("✓ Assignment details loaded".to_string());
-        progress.add_status("Fetching list of students...".to_string());
-        self.state = AppState::FetchingLateResults {
-            _classroom: classroom.clone(),
-            assignment: assignment.clone(),
-            _on_time_deadline: on_time_deadline,
-            _late_deadline: late_deadline,
-            _late_penalty: late_penalty,
-            progress: progress.clone(),
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Step 3: Get all accepted assignments
-        let accepted_assignments = self
-            .classroom_client
+        // Get all accepted assignments
+        let accepted_assignments = classroom_client
             .list_accepted_assignments(assignment.id)
             .await
             .context("Failed to fetch accepted assignments")?;
@@ -940,108 +831,84 @@ impl App {
             anyhow::bail!("No students have accepted this assignment yet");
         }
 
-        progress.total_students = accepted_assignments.len();
-        progress.add_status(format!("✓ Found {} students", accepted_assignments.len()));
-        progress.add_status("Starting to fetch results for both deadlines...".to_string());
-        self.state = AppState::FetchingLateResults {
-            _classroom: classroom.clone(),
-            assignment: assignment.clone(),
-            _on_time_deadline: on_time_deadline,
-            _late_deadline: late_deadline,
-            _late_penalty: late_penalty,
-            progress: progress.clone(),
+        // Fetch test definitions
+        let test_definitions = if let Some(starter_url) = &assignment_details.starter_code_url {
+            fetcher::fetch_test_definitions(&github_client, starter_url).await?
+        } else {
+            let first_student = &accepted_assignments[0];
+            let (owner, repo) = fetcher::parse_repo_url(&first_student.repository.full_name);
+            let workflow_content = github_client
+                .get_file_contents(owner, repo, ".github/workflows/classroom.yml")
+                .await
+                .context("Failed to fetch workflow file from first student's repository")?;
+            parser::parse_workflow(&workflow_content)?
         };
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        // Step 4: Fetch late grading results
-        // Use a channel to receive progress updates
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let classroom_client = self.classroom_client.clone();
-        let github_client = self.github_client.clone();
-        let assignment_id = assignment.id;
-
-        // Spawn async task to fetch results
-        let mut fetch_task = tokio::spawn(async move {
-            fetcher::fetch_all_late_results(
-                &classroom_client,
-                &github_client,
-                assignment_id,
-                on_time_deadline,
-                late_deadline,
-                late_penalty,
-                Some(Box::new(move |completed, total, student| {
-                    let _ = tx.send((completed, total, student.to_string()));
-                })),
-            )
-            .await
-        });
-
-        // Poll for progress updates
-        loop {
-            tokio::select! {
-                Some((completed, total, student)) = rx.recv() => {
-                    progress.completed = completed.saturating_sub(1);
-                    progress.total_students = total;
-                    progress.current_student = student.clone();
-                    progress.add_status(format!(
-                        "[{}/{}] Fetching: {}",
-                        completed,
-                        total,
-                        student
-                    ));
-                    self.state = AppState::FetchingLateResults {
-                        _classroom: classroom.clone(),
-                        assignment: assignment.clone(),
-                        _on_time_deadline: on_time_deadline,
-                        _late_deadline: late_deadline,
-                        _late_penalty: late_penalty,
-                        progress: progress.clone(),
-                    };
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                }
-                result = &mut fetch_task => {
-                    let results = result??;
-
-                    progress.completed = progress.total_students;
-                    progress.add_status(format!(
-                        "✓ Completed fetching late grading results for {} students",
-                        results.len()
-                    ));
-                    progress.add_status("Exporting results to CSV...".to_string());
-                    self.state = AppState::FetchingLateResults {
-                        _classroom: classroom.clone(),
-                        assignment: assignment.clone(),
-                        _on_time_deadline: on_time_deadline,
-                        _late_deadline: late_deadline,
-                        _late_penalty: late_penalty,
-                        progress: progress.clone(),
-                    };
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-                    // Step 5: Export to CSV
-                    let csv_filename = export::export_late_grading_to_csv(&results, &assignment.slug)?;
-
-                    progress.add_status(format!("✓ Exported to {}", csv_filename.display()));
-
-                    // Step 6: Calculate stats (using on-time results for stats display)
-                    let regular_results: Vec<_> = results.iter().map(|r| r.on_time_result.clone()).collect();
-                    let stats = ResultStats::calculate(&regular_results);
-
-                    self.state = AppState::ResultsComplete {
-                        classroom,
-                        assignment,
-                        stats,
-                        csv_filename: csv_filename.to_string_lossy().to_string(),
-                    };
-
-                    break;
+        // Fetch results for each student
+        let mut results = Vec::new();
+        for student in accepted_assignments.iter() {
+            match fetcher::fetch_student_results(&github_client, student, deadline, &test_definitions).await {
+                Ok(result) => results.push(result),
+                Err(e) => {
+                    let student_name = student
+                        .students
+                        .first()
+                        .map(|s| s.login.as_str())
+                        .unwrap_or("unknown");
+                    eprintln!("Error fetching results for {}: {}", student_name, e);
                 }
             }
         }
 
-        Ok(())
+        // Export to CSV
+        let csv_filename = export::export_to_csv(&results, &assignment.slug)?;
+
+        // Calculate stats
+        let stats = ResultStats::calculate(&results);
+
+        Ok(AppState::ResultsComplete {
+            classroom,
+            assignment,
+            stats,
+            csv_filename: csv_filename.to_string_lossy().to_string(),
+        })
     }
+
+    async fn do_fetch_late_results(
+        classroom_client: ClassroomClient,
+        github_client: GitHubClient,
+        classroom: Classroom,
+        assignment: Assignment,
+        on_time_deadline: chrono::DateTime<Utc>,
+        late_deadline: chrono::DateTime<Utc>,
+        late_penalty: f64,
+    ) -> Result<AppState> {
+        // Fetch late grading results
+        let results = fetcher::fetch_all_late_results(
+            &classroom_client,
+            &github_client,
+            assignment.id,
+            on_time_deadline,
+            late_deadline,
+            late_penalty,
+            None, // No progress callback since we're running in background
+        ).await?;
+
+        // Export to CSV
+        let csv_filename = export::export_late_grading_to_csv(&results, &assignment.slug)?;
+
+        // Calculate stats (using on-time results)
+        let regular_results: Vec<_> = results.iter().map(|r| r.on_time_result.clone()).collect();
+        let stats = ResultStats::calculate(&regular_results);
+
+        Ok(AppState::ResultsComplete {
+            classroom,
+            assignment,
+            stats,
+            csv_filename: csv_filename.to_string_lossy().to_string(),
+        })
+    }
+
 }
 
 fn parse_deadline(date_str: &str, time_str: &str) -> Result<chrono::DateTime<Utc>> {

@@ -7,15 +7,15 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_ui(frame: &mut Frame, state: &AppState) {
+pub fn render_ui(frame: &mut Frame, state: &AppState, spinner: char) {
     match state {
-        AppState::LoadingClassrooms => render_loading(frame, "Loading classrooms..."),
+        AppState::LoadingClassrooms => render_loading(frame, "Loading classrooms...", spinner),
         AppState::ClassroomSelection {
             classrooms,
             selected_index,
         } => render_classroom_selection(frame, classrooms, *selected_index),
         AppState::LoadingAssignments { classroom } => {
-            render_loading(frame, &format!("Loading assignments for {}...", classroom.name))
+            render_loading(frame, &format!("Loading assignments for {}...", classroom.name), spinner)
         }
         AppState::AssignmentSelection {
             classroom,
@@ -63,12 +63,12 @@ pub fn render_ui(frame: &mut Frame, state: &AppState) {
             assignment,
             progress,
             ..
-        } => render_fetching_results(frame, assignment, progress),
+        } => render_fetching_results(frame, assignment, progress, spinner),
         AppState::FetchingLateResults {
             assignment,
             progress,
             ..
-        } => render_fetching_results(frame, assignment, progress),
+        } => render_fetching_results(frame, assignment, progress, spinner),
         AppState::ResultsComplete {
             assignment,
             stats,
@@ -79,14 +79,15 @@ pub fn render_ui(frame: &mut Frame, state: &AppState) {
     }
 }
 
-fn render_loading(frame: &mut Frame, message: &str) {
+fn render_loading(frame: &mut Frame, message: &str, spinner: char) {
     let area = frame.area();
     let block = Block::default()
         .title("GitHub Classroom Autograder Fetcher")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
-    let paragraph = Paragraph::new(message)
+    let loading_text = format!("{} {}", spinner, message);
+    let paragraph = Paragraph::new(loading_text)
         .block(block)
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
@@ -555,6 +556,7 @@ fn render_fetching_results(
     frame: &mut Frame,
     assignment: &crate::models::Assignment,
     progress: &crate::ui::state::FetchProgress,
+    spinner: char,
 ) {
     let area = frame.area();
 
@@ -568,8 +570,8 @@ fn render_fetching_results(
         ])
         .split(area);
 
-    // Title
-    let title = Paragraph::new(format!("Fetching Results: {}", assignment.title))
+    // Title with spinner
+    let title = Paragraph::new(format!("{} Fetching Results: {}", spinner, assignment.title))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -611,17 +613,17 @@ fn render_fetching_results(
 
     frame.render_widget(status_list, chunks[2]);
 
-    // Summary info
+    // Summary info with spinner
     let info_text = if progress.current_student.is_empty() {
-        "Preparing...".to_string()
+        format!("{} Preparing...", spinner)
     } else {
-        format!("Current student: {}", progress.current_student)
+        format!("{} Current student: {}", spinner, progress.current_student)
     };
 
     let info = Paragraph::new(info_text)
         .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Cyan));
+        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
     frame.render_widget(info, chunks[3]);
 }
