@@ -6,6 +6,7 @@ A command-line tool with an interactive TUI for fetching and exporting GitHub Cl
 
 - **Interactive TUI**: Navigate through classrooms and assignments with an intuitive terminal interface
 - **Flexible Date Filtering**: Download latest results or results from the first run after a specific deadline
+- **Late Grading Mode**: Award partial credit for improvements between on-time and late deadlines with configurable penalties
 - **Individual Test Results**: Export detailed test-by-test scores for each student
 - **Dynamic CSV Format**: Test names as column headers, making it easy to analyze in spreadsheet software
 - **Parallel Processing**: Efficient fetching of results for multiple students
@@ -58,8 +59,14 @@ The TUI interface guides you through the following steps:
 3. **Choose Option**:
    - **Download Latest Results**: Fetches the most recent autograder run for all students
    - **Download Results After Deadline**: Fetches the first autograder run after a specified deadline
-4. **Enter Deadline** (if applicable): Input date and time in the format `YYYY-MM-DD HH:MM:SS`
-5. **View Results**: See statistics and the location of the exported CSV file
+   - **Late Grading Mode**: Choose between regular grading or late grading with partial credit
+4. **Choose Grading Mode** (if Late Grading Mode selected):
+   - **Regular Grading**: Single deadline
+   - **Late Grading**: On-time and late deadlines with partial credit for improvements
+5. **Enter Deadline(s)**:
+   - For regular grading: Date and time in format `YYYY-MM-DD HH:MM` (UTC)
+   - For late grading: On-time and late deadlines plus penalty percentage (0-100)
+6. **View Results**: See statistics and the location of the exported CSV file
 
 ### Keyboard Shortcuts
 
@@ -70,6 +77,8 @@ The TUI interface guides you through the following steps:
 - `q`: Quit the application
 
 ## CSV Export Format
+
+### Regular Grading CSV
 
 The exported CSV file includes:
 
@@ -85,12 +94,59 @@ The exported CSV file includes:
   - `total_points_available`: Maximum possible points
   - `percentage`: Score as a percentage
 
-### Example CSV Output
+#### Example Regular Grading CSV
 
 ```csv
 student_username,student_repo_url,workflow_run_timestamp,test_clippy_passes,test_rustfmt_passes,q1::tests::test_series_creation,total_points_awarded,total_points_available,percentage
 student1,https://github.com/cdsds210/assignment1-student1,2025-01-15T10:30:00Z,2,2,1,5,10,50.00
 student2,https://github.com/cdsds210/assignment1-student2,2025-01-15T11:45:00Z,2,2,1,5,10,50.00
+```
+
+### Late Grading CSV
+
+When using late grading mode, the CSV file includes:
+
+- **Fixed Columns**:
+  - `student_username`: GitHub username of the student
+  - `student_repo_url`: URL to the student's assignment repository
+  - `on_time_timestamp`: Timestamp of the first workflow run after on-time deadline
+  - `late_timestamp`: Timestamp of the first workflow run after late deadline
+
+- **Dynamic Test Columns**: One column for each test, showing points from the on-time submission
+
+- **Summary Columns**:
+  - `total_points_available`: Maximum possible points
+  - `on_time_points`: Points earned from on-time submission
+  - `late_points`: Points earned from late submission
+  - `final_points`: Calculated final score with penalty applied
+  - `final_percentage`: Final score as a percentage
+
+#### Late Grading Calculation
+
+The final score is calculated using the formula:
+
+```
+final_points = on_time_points + max(0, (late_points - on_time_points) × (1 - penalty))
+```
+
+This means:
+- Students receive **full credit** for all points earned by the on-time deadline
+- Students receive **partial credit** (based on penalty %) for additional points earned between on-time and late deadlines
+- If the late score is lower than the on-time score, only the on-time score is used (no penalty for regression)
+
+**Example**: With a 20% penalty (80% credit for late improvements):
+- On-time points: 70/100
+- Late points: 85/100
+- Improvement: 85 - 70 = 15 points
+- Late credit: 15 × 0.8 = 12 points
+- Final score: 70 + 12 = **82/100**
+
+#### Example Late Grading CSV
+
+```csv
+student_username,student_repo_url,on_time_timestamp,late_timestamp,test_clippy_passes,test_rustfmt_passes,q1::tests::test_series_creation,total_points_available,on_time_points,late_points,final_points,final_percentage
+student1,https://github.com/cdsds210/assignment1-student1,2025-01-15T10:30:00Z,2025-01-20T08:15:00Z,2,2,1,10,5,8,7.4,74.00
+student2,https://github.com/cdsds210/assignment1-student2,2025-01-15T11:45:00Z,2025-01-20T09:30:00Z,2,0,1,10,3,7,6.2,62.00
 ```
 
 ## How It Works
