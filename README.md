@@ -55,7 +55,12 @@ cargo build --release
 
 ## Usage
 
-Run the application:
+If you installed via Cargo, you can run the application with:
+```bash
+gh_autograder_fetcher
+```
+
+Or build and run the application:
 ```bash
 cargo run --release
 ```
