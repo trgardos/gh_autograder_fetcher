@@ -534,7 +534,7 @@ fn render_deadline_input(
         Style::default()
     };
 
-    let time = Paragraph::new(format!("Time (HH:MM:SS): {}_", time_input))
+    let time = Paragraph::new(format!("Time (HH:MM): {}_", time_input))
         .block(
             Block::default()
                 .borders(Borders::ALL)

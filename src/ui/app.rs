@@ -332,7 +332,7 @@ impl App {
                                 }
                             }
                             DeadlineField::Time => {
-                                if time_input.len() < 8 {
+                                if time_input.len() < 5 {
                                     time_input.push(c);
                                 }
                             }
@@ -1048,8 +1048,8 @@ fn parse_deadline(date_str: &str, time_str: &str) -> Result<chrono::DateTime<Utc
     let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
         .map_err(|e| anyhow::anyhow!("Invalid date format (expected YYYY-MM-DD): {}", e))?;
 
-    let time = NaiveTime::parse_from_str(time_str, "%H:%M:%S")
-        .map_err(|e| anyhow::anyhow!("Invalid time format (expected HH:MM:SS): {}", e))?;
+    let time = NaiveTime::parse_from_str(time_str, "%H:%M")
+        .map_err(|e| anyhow::anyhow!("Invalid time format (expected HH:MM): {}", e))?;
 
     let datetime = NaiveDateTime::new(date, time);
     Ok(datetime.and_utc())
