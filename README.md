@@ -2,11 +2,10 @@
 
 A command-line tool with an interactive TUI for fetching and exporting GitHub Classroom autograder results to CSV format.
 
-<!--
 <div style="text-align: center;">
   <img src="./assets/gh_autograder_fetcher.gif" width="50%" alt="GitHub Classroom Autograder Fetcher Demo"/>
 </div>
--->
+
 
 ## Features
 
