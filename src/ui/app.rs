@@ -332,7 +332,7 @@ impl App {
                                 }
                             }
                             DeadlineField::Time => {
-                                if time_input.len() < 5 {
+                                if time_input.len() < 6 {
                                     time_input.push(c);
                                 }
                             }
