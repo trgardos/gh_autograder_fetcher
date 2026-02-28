@@ -180,7 +180,7 @@ pub struct StepWith {
 #[derive(Debug, Clone)]
 pub struct TestDefinition {
     pub name: String,
-    pub _id: String,
+    pub id: String,
     pub max_score: u32,
 }
 

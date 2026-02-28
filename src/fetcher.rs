@@ -15,39 +15,30 @@ pub fn parse_repo_url(full_name: &str) -> (&str, &str) {
     }
 }
 
-/// Parse points from GitHub Classroom check run summary
-/// Looks for patterns like "Points XX/YY" or "XX/YY"
-fn parse_points_from_summary(summary: &str) -> Option<u32> {
-    // Try to find "Points XX/YY" pattern
-    if let Some(points_idx) = summary.find("Points") {
-        let after_points = &summary[points_idx + 6..];
-        // Extract the numbers
-        if let Some(slash_idx) = after_points.find('/') {
-            let before_slash = &after_points[..slash_idx].trim();
-            // Extract just the number
-            if let Some(num_str) = before_slash.split_whitespace().last() {
-                if let Ok(points) = num_str.parse::<u32>() {
-                    return Some(points);
+/// Parse per-test scores from GitHub Classroom autograding reporter logs.
+/// Looks for lines like "Total points for {runner-id}: {score}/{max}".
+/// Returns a map of runner ID (step id) → points awarded.
+fn parse_test_scores_from_logs(logs: &str) -> std::collections::HashMap<String, u32> {
+    let mut scores = std::collections::HashMap::new();
+    let marker = "Total points for ";
+
+    for line in logs.lines() {
+        if let Some(idx) = line.find(marker) {
+            let rest = &line[idx + marker.len()..];
+            if let Some(colon_idx) = rest.find(": ") {
+                let runner_id = rest[..colon_idx].trim().to_string();
+                let score_part = &rest[colon_idx + 2..];
+                if let Some(slash_idx) = score_part.find('/') {
+                    let score_str = score_part[..slash_idx].trim();
+                    if let Ok(score_f) = score_str.parse::<f64>() {
+                        scores.insert(runner_id, score_f.round() as u32);
+                    }
                 }
             }
         }
     }
 
-    // Try to find "XX/YY" pattern directly
-    for line in summary.lines() {
-        if let Some(slash_idx) = line.find('/') {
-            // Get the characters before the slash
-            let before_slash = &line[..slash_idx];
-            // Try to extract the number
-            if let Some(num_str) = before_slash.split_whitespace().last() {
-                if let Ok(points) = num_str.parse::<u32>() {
-                    return Some(points);
-                }
-            }
-        }
-    }
-
-    None
+    scores
 }
 
 /// Fetch test definitions from the assignment's starter repository
@@ -93,12 +84,16 @@ pub async fn fetch_student_results(
         anyhow::bail!("Invalid repository name: {}", student.repository.full_name);
     }
 
-    // Get the student username (first student in the list)
+    // Get the student username and display name (first student in the list)
     let username = student
         .students
         .first()
         .map(|s| s.login.clone())
         .unwrap_or_else(|| "unknown".to_string());
+    let display_name = student
+        .students
+        .first()
+        .and_then(|s| s.name.clone());
 
     // Build filter for workflow runs
     let created_filter = deadline.map(|dt| format!(">={}", dt.to_rfc3339()));
@@ -157,51 +152,42 @@ pub async fn fetch_student_results(
 
     let mut tests = IndexMap::new();
 
+    // Initialize all tests with 0 points; scores will be set from job logs below
     for test_def in test_definitions {
-        // Find matching step by name
-        let step = autograding_job
-            .steps
-            .iter()
-            .find(|s| s.name == test_def.name);
-
-        let (points_awarded, passed) = if let Some(step) = step {
-            match step.conclusion.as_deref() {
-                Some("success") => (test_def.max_score, true),
-                Some("failure") => (0, false),
-                _ => (0, false),
-            }
-        } else {
-            (0, false)
-        };
-
         tests.insert(
             test_def.name.clone(),
             TestResult {
                 _name: test_def.name.clone(),
-                points_awarded,
+                points_awarded: 0,
                 _points_available: test_def.max_score,
-                _passed: passed,
+                _passed: false,
             },
         );
     }
 
-    // Get actual points from job logs
-    // GitHub Classroom autograding reporter outputs the final score in the logs
-    let mut total_awarded: u32 = tests.values().map(|t| t.points_awarded).sum();
-
-    // Get the authoritative total score from job logs
-    // Note: Individual test scores are based on pass/fail from job steps above
-    // The logs contain the final total which handles any partial credit
+    // Parse per-test scores from job logs using the reporter's
+    // "Total points for {runner-id}: {score}/{max}" lines.
+    // The runner-id matches the workflow step id field.
     if let Ok(logs) = github_client.get_job_logs(owner, repo, autograding_job.id).await {
-        if let Some(points) = parse_points_from_summary(&logs) {
-            total_awarded = points;
+        let log_scores = parse_test_scores_from_logs(&logs);
+
+        for test_def in test_definitions {
+            if let Some(&score) = log_scores.get(&test_def.id) {
+                if let Some(result) = tests.get_mut(&test_def.name) {
+                    result.points_awarded = score;
+                    result._passed = score > 0;
+                }
+            }
         }
     }
+
+    let total_awarded: u32 = tests.values().map(|t| t.points_awarded).sum();
 
     let total_available = test_definitions.iter().map(|t| t.max_score).sum();
 
     Ok(StudentResult {
         username,
+        display_name,
         repo_url: student.repository.html_url.clone(),
         workflow_run_timestamp: run.created_at,
         tests,
