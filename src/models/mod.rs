@@ -187,6 +187,7 @@ pub struct TestDefinition {
 #[derive(Debug, Clone)]
 pub struct StudentResult {
     pub username: String,
+    pub display_name: Option<String>,
     pub repo_url: String,
     pub workflow_run_timestamp: DateTime<Utc>,
     pub tests: IndexMap<String, TestResult>,
