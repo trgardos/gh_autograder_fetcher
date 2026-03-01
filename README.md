@@ -8,7 +8,6 @@ A command-line tool with an interactive TUI for fetching and exporting GitHub Cl
   <img src="./assets/gh_autograder_fetcher.gif" width="50%" alt="GitHub Classroom Autograder Fetcher Demo"/>
 </div>
 
-
 ## Features
 
 - **Interactive TUI**: Navigate through classrooms and assignments with an intuitive terminal interface
@@ -37,18 +36,21 @@ cargo install gh_autograder_fetcher
 Or clone this repository and build manually:
 
 1. Clone this repository:
+
 ```bash
 git clone <repository-url>
 cd gh_autograder_fetcher
 ```
 
-2. Create a `.env` file with your GitHub token:
+1. Create a `.env` file with your GitHub token:
+
 ```bash
 cp .env.example .env
 # Edit .env and add your GitHub token
 ```
 
-3. Build the project:
+1. Build the project:
+
 ```bash
 cargo build --release
 ```
@@ -56,16 +58,19 @@ cargo build --release
 ## Usage
 
 If you installed via Cargo, you can run the application with:
+
 ```bash
 gh_autograder_fetcher
 ```
 
 Or build and run the application:
+
 ```bash
 cargo run --release
 ```
 
 Or run the compiled binary:
+
 ```bash
 ./target/release/gh_autograder_fetcher
 ```
@@ -77,15 +82,15 @@ The TUI interface guides you through the following steps:
 1. **Select Classroom**: Choose from your available GitHub Classroom classrooms
 2. **Select Assignment**: Pick an assignment from the selected classroom
 3. **Choose Option**:
-   - **Download Latest Results**: Fetches the most recent autograder run for all students
-   - **Download Results After Deadline**: Fetches the first autograder run after a specified deadline
-   - **Late Grading Mode**: Choose between regular grading or late grading with partial credit
+  - **Download Latest Results**: Fetches the most recent autograder run for all students
+  - **Download Results After Deadline**: Fetches the first autograder run after a specified deadline
+  - **Late Grading Mode**: Choose between regular grading or late grading with partial credit
 4. **Choose Grading Mode** (if Late Grading Mode selected):
-   - **Regular Grading**: Single deadline
-   - **Late Grading**: On-time and late deadlines with partial credit for improvements
+  - **Regular Grading**: Single deadline
+  - **Late Grading**: On-time and late deadlines with partial credit for improvements
 5. **Enter Deadline(s)**:
-   - For regular grading: Date and time in format `YYYY-MM-DD HH:MM` (UTC)
-   - For late grading: On-time and late deadlines plus penalty percentage (0-100)
+  - For regular grading: Date and time in format `YYYY-MM-DD HH:MM` (UTC)
+  - For late grading: On-time and late deadlines plus penalty percentage (0-100)
 6. **View Results**: See statistics and the location of the exported CSV file
 
 ### Keyboard Shortcuts
@@ -106,9 +111,7 @@ The exported CSV file includes:
   - `student_username`: GitHub username of the student
   - `student_repo_url`: URL to the student's assignment repository
   - `workflow_run_timestamp`: Timestamp of the autograder workflow run
-
 - **Dynamic Test Columns**: One column for each test in the assignment, showing points earned
-
 - **Summary Columns**:
   - `total_points_awarded`: Total points earned by the student
   - `total_points_available`: Maximum possible points
@@ -131,9 +134,7 @@ When using late grading mode, the CSV file includes:
   - `student_repo_url`: URL to the student's assignment repository
   - `on_time_timestamp`: Timestamp of the first workflow run after on-time deadline
   - `late_timestamp`: Timestamp of the first workflow run after late deadline
-
 - **Dynamic Test Columns**: One column for each test, showing points from the on-time submission
-
 - **Summary Columns**:
   - `total_points_available`: Maximum possible points
   - `on_time_points`: Points earned from on-time submission
@@ -150,11 +151,13 @@ final_points = on_time_points + max(0, (late_points - on_time_points) × (1 - pe
 ```
 
 This means:
+
 - Students receive **full credit** for all points earned by the on-time deadline
 - Students receive **partial credit** (based on penalty %) for additional points earned between on-time and late deadlines
 - If the late score is lower than the on-time score, only the on-time score is used (no penalty for regression)
 
 **Example**: With a 20% penalty (80% credit for late improvements):
+
 - On-time points: 70/100
 - Late points: 85/100
 - Improvement: 85 - 70 = 15 points
@@ -191,6 +194,7 @@ This tool expects your GitHub Classroom assignments to use the standard autograd
   - `with.test-name` and `with.max-score` parameters
 
 Example workflow step:
+
 ```yaml
 - name: "test_clippy_passes"
   id: "test-clippy-passes"
@@ -205,15 +209,18 @@ Example workflow step:
 ## Troubleshooting
 
 ### "No classrooms found"
+
 - Verify your GitHub token has the `read:org` scope
 - Ensure you're a member of at least one GitHub Classroom organization
 
 ### "Failed to fetch workflow file from starter repository"
+
 - Ensure the assignment has a starter code repository configured
 - Verify the workflow file exists at `.github/workflows/classroom.yml`
 - Check that your token has the `repo` scope
 
 ### "No completed workflow run found"
+
 - Students may not have accepted the assignment yet
 - Workflow runs may still be in progress
 - The deadline filter may be excluding all runs
@@ -254,3 +261,8 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+### How to cut the next release
+
+Bump `version = "..."` in Cargo.toml, merge to main, and the workflow will publish + create a Release tagged like v0.1.3. Subsequent merges without a version bump will just build/test and skip publishing/releasing.
+
