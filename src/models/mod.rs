@@ -180,13 +180,14 @@ pub struct StepWith {
 #[derive(Debug, Clone)]
 pub struct TestDefinition {
     pub name: String,
-    pub _id: String,
+    pub id: String,
     pub max_score: u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct StudentResult {
     pub username: String,
+    pub display_name: Option<String>,
     pub repo_url: String,
     pub workflow_run_timestamp: DateTime<Utc>,
     pub tests: IndexMap<String, TestResult>,

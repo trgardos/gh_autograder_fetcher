@@ -26,6 +26,7 @@ pub fn export_to_csv(
     // Build CSV headers
     let mut headers = vec![
         "student_username".to_string(),
+        "student_name".to_string(),
         "student_repo_url".to_string(),
         "workflow_run_timestamp".to_string(),
     ];
@@ -52,6 +53,7 @@ pub fn export_to_csv(
     for student in results {
         let mut record = vec![
             student.username.clone(),
+            student.display_name.clone().unwrap_or_default(),
             student.repo_url.clone(),
             student.workflow_run_timestamp.to_rfc3339(),
         ];
@@ -110,6 +112,7 @@ pub fn export_late_grading_to_csv(
     // Build CSV headers
     let mut headers = vec![
         "student_username".to_string(),
+        "student_name".to_string(),
         "student_repo_url".to_string(),
         "on_time_timestamp".to_string(),
         "late_timestamp".to_string(),
@@ -139,6 +142,7 @@ pub fn export_late_grading_to_csv(
     for result in results {
         let mut record = vec![
             result.username.clone(),
+            result.on_time_result.display_name.clone().unwrap_or_default(),
             result.repo_url.clone(),
             result.on_time_result.workflow_run_timestamp.to_rfc3339(),
             result.late_result.workflow_run_timestamp.to_rfc3339(),
@@ -209,6 +213,7 @@ mod tests {
 
         let results = vec![StudentResult {
             username: "student1".to_string(),
+            display_name: Some("Student One".to_string()),
             repo_url: "https://github.com/org/repo".to_string(),
             workflow_run_timestamp: Utc::now(),
             tests,
